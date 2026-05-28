@@ -256,11 +256,11 @@ def register(mcp, client: HealthClient) -> None:
     async def get_respiratory_rate(
         date: str | None = None, end_date: str | None = None
     ) -> dict[str, Any]:
-        """Fréquence respiratoire nocturne (résumé par sommeil)."""
+        """Fréquence respiratoire nocturne (résumé par phase de sommeil)."""
         s, e = _resolve_range(date, end_date, default_days=30 if date is None else 1)
         return await _list(
             "respiratory-rate-sleep-summary",
-            _interval_filter("respiratory-rate-sleep-summary", s, e),
+            _sample_filter("respiratory-rate-sleep-summary", s, e),
         )
 
     @mcp.tool()
@@ -319,7 +319,7 @@ def register(mcp, client: HealthClient) -> None:
     ) -> dict[str, Any]:
         """Journal alimentaire (entrées loggées)."""
         s, e = _resolve_range(date, end_date)
-        return await _list("nutrition-log", _interval_filter("nutrition-log", s, e))
+        return await _list("nutrition-log", _civil_interval_filter("nutrition-log", s, e))
 
     @mcp.tool()
     async def get_hydration_log(
@@ -327,14 +327,24 @@ def register(mcp, client: HealthClient) -> None:
     ) -> dict[str, Any]:
         """Hydratation (verres d'eau loggés)."""
         s, e = _resolve_range(date, end_date)
-        return await _list("hydration-log", _interval_filter("hydration-log", s, e))
+        return await _list("hydration-log", _civil_interval_filter("hydration-log", s, e))
 
     # ─── Cardio événements ───────────────────────────────────────────────────
     @mcp.tool()
-    async def get_ecg(date: str | None = None, end_date: str | None = None) -> dict[str, Any]:
-        """ECG (Pixel Watch) — classification + waveform."""
-        s, e = _resolve_range(date, end_date, default_days=30 if date is None else 1)
-        return await _list("electrocardiogram", _interval_filter("electrocardiogram", s, e))
+    async def get_ecg(date: str | None = None) -> dict[str, Any]:
+        """ECG (Pixel Watch) — classification + waveform.
+
+        Note: l'API Google Health pour ECG accepte uniquement une borne
+        inférieure (>=). Renvoie tous les ECG enregistrés DEPUIS `date`
+        (par défaut : 30 jours en arrière). Pas de filtrage par borne supérieure.
+        """
+        from datetime import date as _date, timedelta as _td
+        if date is None:
+            start = _date.today() - _td(days=30)
+        else:
+            start = _date.fromisoformat(date)
+        flt = f'electrocardiogram.interval.start_time >= "{_to_iso_z(start)}"'
+        return await _list("electrocardiogram", flt)
 
     @mcp.tool()
     async def get_irn_alerts(
