@@ -1,0 +1,21 @@
+[project]
+name = "pixel-mcp"
+version = "0.1.0"
+description = "MCP server for Pixel Watch / Fitbit Web API — full coverage: activity, heart, HRV, sleep, SpO2, body, nutrition."
+requires-python = ">=3.11"
+dependencies = [
+    "mcp[cli]>=1.2.0",
+    "httpx>=0.27",
+    "pydantic>=2.6",
+    "python-dotenv>=1.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pixel_mcp"]
+
+[project.scripts]
+pixel-mcp = "pixel_mcp.server:main"
