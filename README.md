@@ -68,3 +68,19 @@ L'API Google Health v4 expose une seule resource générique `users/me/dataTypes
 - **`tools/convenience.py`** — wrappers haut-niveau par domaine (get_steps, get_heart_rate, get_sleep, get_hrv, get_spo2…) qui construisent les filtres AIP-160 pour toi.
 
 49 tools au total. Pour des cas non couverts par les wrappers, utilise `list_data_points(data_type, filter=...)` directement.
+
+## Logs (debug)
+
+Toutes les requêtes API et événements OAuth sont loggés en JSON-lines dans `~/.config/pixel-mcp/logs/pixel-mcp.log` (rotation 5×1 Mo). Ni les tokens, ni les Authorization headers, ni les payloads de data points (FC, sommeil, GPS…) ne sont écrits — seulement les métadonnées HTTP.
+
+Niveau réglable via env var :
+```bash
+PIXEL_MCP_LOG_LEVEL=DEBUG uv run python -m pixel_mcp.server
+```
+
+Inspecter rapidement :
+```bash
+tail -f ~/.config/pixel-mcp/logs/pixel-mcp.log | jq .
+# Toutes les erreurs HTTP :
+jq 'select(.event=="http_error")' ~/.config/pixel-mcp/logs/pixel-mcp.log
+```

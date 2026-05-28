@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any
 
 import httpx
 
 from .auth import TokenManager
+from .logging_setup import get_logger
+
+_log = get_logger()
 
 API_BASE = "https://health.googleapis.com/v4"
 
@@ -42,7 +46,8 @@ class HealthClient:
         json_body: dict | None = None,
     ) -> Any:
         url = f"{API_BASE}{path}" if path.startswith("/") else path
-        for _ in range(3):
+        for attempt in range(3):
+            t0 = time.time()
             resp = await self._client.request(
                 method,
                 url,
@@ -50,12 +55,39 @@ class HealthClient:
                 json=json_body,
                 headers=self._headers(),
             )
+            dt_ms = int((time.time() - t0) * 1000)
+            _log.info(
+                "http",
+                extra={
+                    "event": "http",
+                    "method": method,
+                    "path": path,
+                    "status": resp.status_code,
+                    "duration_ms": dt_ms,
+                    "attempt": attempt,
+                },
+            )
             if resp.status_code == 429:
                 retry_after = float(resp.headers.get("Retry-After", "10"))
+                _log.warning(
+                    "rate_limited",
+                    extra={"event": "rate_limited", "retry_after_s": retry_after},
+                )
                 await asyncio.sleep(retry_after)
                 continue
             if resp.status_code >= 400:
-                raise HealthError(resp.status_code, resp.text[:1000])
+                body = resp.text[:1000]
+                _log.error(
+                    "http_error",
+                    extra={
+                        "event": "http_error",
+                        "method": method,
+                        "path": path,
+                        "status": resp.status_code,
+                        "body": body,
+                    },
+                )
+                raise HealthError(resp.status_code, body)
             if resp.status_code == 204 or not resp.content:
                 return None
             ctype = resp.headers.get("content-type", "")

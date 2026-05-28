@@ -17,6 +17,10 @@ from pathlib import Path
 import httpx
 from dotenv import load_dotenv
 
+from .logging_setup import get_logger
+
+_log = get_logger()
+
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 
@@ -215,6 +219,7 @@ def _run_oauth_flow(client_id: str, client_secret: str, scopes: list[str]) -> To
 
     tokens = _exchange_code(client_id, client_secret, code)
     _save_tokens(tokens)
+    _log.info("oauth_completed", extra={"event": "oauth_completed", "expires_at": tokens.expires_at})
     return tokens
 
 
@@ -243,6 +248,11 @@ class TokenManager:
     def access_token(self) -> str:
         tokens = self.ensure_authorized()
         if tokens.expires_at - int(time.time()) < 60:
-            tokens = _refresh(self.client_id, self.client_secret, tokens.refresh_token)
+            _log.info("oauth_refresh", extra={"event": "oauth_refresh"})
+            try:
+                tokens = _refresh(self.client_id, self.client_secret, tokens.refresh_token)
+            except Exception:
+                _log.exception("oauth_refresh_failed", extra={"event": "oauth_refresh_failed"})
+                raise
             self._tokens = tokens
         return tokens.access_token
