@@ -208,9 +208,19 @@ def register(mcp, client: HealthClient) -> None:
     # ─── Sommeil ─────────────────────────────────────────────────────────────
     @mcp.tool()
     async def get_sleep(date: str | None = None, end_date: str | None = None) -> dict[str, Any]:
-        """Sessions de sommeil avec phases et score."""
+        """Sessions de sommeil avec phases et score.
+
+        Note: Google Health filtre les sessions de sommeil sur l'heure de FIN
+        (l'heure de réveil), pas l'heure de coucher. La date fournie correspond
+        donc au jour de réveil.
+        """
         s, e = _resolve_range(date, end_date)
-        return await _list("sleep", _interval_filter("sleep", s, e))
+        # Sleep uses end_time, not start_time, because sessions cross midnight.
+        flt = (
+            f'sleep.interval.end_time >= "{_to_iso_z(s)}" AND '
+            f'sleep.interval.end_time < "{_to_iso_z(e)}"'
+        )
+        return await _list("sleep", flt)
 
     @mcp.tool()
     async def get_sleep_temperature(
