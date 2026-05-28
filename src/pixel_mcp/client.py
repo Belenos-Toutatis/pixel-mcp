@@ -110,6 +110,9 @@ class HealthClient:
             json_body=body,
         )
 
+    async def delete(self, path: str) -> Any:
+        return await self.request("DELETE", path)
+
 
 # Catalogue connu des dataTypes (kebab-case) — informatif pour Claude.
 DATA_TYPES = [

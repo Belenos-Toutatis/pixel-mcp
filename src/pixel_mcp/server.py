@@ -10,6 +10,7 @@ from .tools import (
     register_devices,
     register_datapoints,
     register_convenience,
+    register_writes,
 )
 
 mcp = FastMCP("pixel-mcp")
@@ -19,6 +20,7 @@ register_users(mcp, _client)
 register_devices(mcp, _client)
 register_datapoints(mcp, _client)
 register_convenience(mcp, _client)
+register_writes(mcp, _client)
 
 
 def main() -> None:
