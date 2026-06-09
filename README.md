@@ -1,86 +1,100 @@
 # pixel-mcp
 
-Serveur MCP (Model Context Protocol) pour la **Pixel Watch** et toute donnée santé synchronisée via Google Health Connect, à travers la nouvelle **Google Health API v4** (qui remplace l'ancienne Fitbit Web API, dépréciée en septembre 2026).
+MCP server for the [Google Health API](https://developers.google.com/health) (v4) — access Pixel Watch, Fitbit, and Google Health data from Claude or any MCP client.
 
-Conçu pour brancher Claude (Desktop ou Code) sur ses données santé : coaching basé sur la charge réelle, conseils nutrition selon le sommeil/HRV, suivi récup, etc.
+Built with Python + [FastMCP](https://github.com/jlowin/fastmcp). Replaces the deprecated Fitbit Web API.
 
-Couvre toute la surface de l'API :
-- **Activité** — pas, distance, étages, énergie active, AZM, niveau d'activité, séances d'exercice (depuis Pixel Watch, Garmin Connect, Strava… via Health Connect)
-- **Cardio** — FC live, FC repos, zones HR, HRV nocturne et intraday, VO2max (général + course)
-- **Sommeil** — sessions complètes avec phases, dérives de température cutanée
-- **Wellness** — SpO2 (nuit + résumé), fréquence respiratoire, température corporelle
-- **Corps** — poids, masse grasse, taille, glycémie
-- **Nutrition** — food log, hydratation
-- **Cardiaque événementiel** — ECG, notifications de rythme irrégulier (IRN)
-- **Natation** — détail par longueur
-- **Profil & paramètres** — lecture et écriture
+## Features
 
-## Pourquoi ce projet
+### Health data (31 convenience tools)
+- **Activity** — steps, distance, active energy burned, active zone minutes, activity level, sedentary periods, floors
+- **Heart** — heart rate, resting heart rate, heart rate zones, HRV, HRV intraday
+- **Sleep** — sleep sessions, sleep temperature
+- **Body** — weight, body fat, height, core body temperature
+- **Breathing** — respiratory rate, daily respiratory rate, SpO2, daily SpO2
+- **Exercise** — exercise sessions with export to TCX
+- **Nutrition** — nutrition log, hydration log
+- **Medical** — ECG, IRN alerts, IRN profile
+- **Other** — VO2 max, run VO2 max
 
-L'API Google Health v4 est très récente, mal documentée à plusieurs endroits (filtres AIP-160 entre snake_case/camelCase, structures `sample_time.physical_time` nestées, exercise qui exige `civil_start_time` au lieu de `start_time`…). Ce repo encapsule tous ces pièges derrière 49 tools MCP propres et prêts à l'emploi.
+### Write tools
+- **Log weight** — record a weigh-in (kg)
+- **Log body fat** — record body fat percentage
+- **Log height** — record height (cm)
+- **Log hydration** — record water intake (ml)
+- **Delete data point** — remove any data point by ID
+
+### Generic CRUD
+- List, get, create, patch, delete any data point
+- Rollup and daily rollup aggregations
+- Reconcile data points
+- List all supported data types
+
+### Profile & devices
+- User identity, profile, settings
+- List paired devices, device details
+
+### 50+ tools total
 
 ## Setup
 
-### 1. Projet Google Cloud + Health API
+### 1. Create a Google Cloud project
 
-1. Va sur https://console.cloud.google.com et crée un nouveau projet (ex: `pixel-mcp`).
-2. Active l'API : https://console.developers.google.com/apis/library/health.googleapis.com → **Enable**.
-3. **OAuth consent screen** : type "External", remplis nom + email. Dans **Audience**, ajoute ton email Google (de la Pixel Watch) comme **Test user**.
-4. **Data Access (scopes)** : https://console.developers.google.com/auth/scopes — ajoute tous les scopes `googlehealth.*` (readonly + writeonly) que tu veux utiliser. Pour tout couvrir : 15 scopes (activity_and_fitness, ecg, health_metrics, irn, location, nutrition, profile, settings, sleep — read et write).
-5. **Credentials** : https://console.developers.google.com/apis/credentials → **Create credentials → OAuth client ID** :
-   - Application type : **Web application**
-   - Name : `pixel-mcp`
-   - **Authorized redirect URIs** : `http://127.0.0.1:8733/callback`
-   - Crée → note **Client ID** et **Client Secret**.
+1. Go to https://console.cloud.google.com
+2. Create a new project
+3. Enable the **Google Health API**
+4. Go to **OAuth consent screen** > add all `googlehealth.*` scopes (15 scopes)
+5. Create an **OAuth 2.0 Client ID** (Web application) with redirect URI: `http://127.0.0.1:8733/callback`
 
-### 2. .env
+> **Tip:** Publish your app (OAuth consent screen > Audience > Publish) to avoid refresh token expiry every 7 days in "Testing" mode.
 
-```
-GOOGLE_HEALTH_CLIENT_ID=...
-GOOGLE_HEALTH_CLIENT_SECRET=...
-```
-
-### 3. Installer & autoriser
+### 2. Configure credentials
 
 ```bash
-git clone https://github.com/<ton-user>/pixel-mcp.git ~/pixel-mcp
-cd ~/pixel-mcp
-cp .env.example .env   # remplis GOOGLE_HEALTH_CLIENT_ID/SECRET
+cd pixel-mcp
+cp .env.example .env
+# Edit .env with your GOOGLE_HEALTH_CLIENT_ID and GOOGLE_HEALTH_CLIENT_SECRET
+```
+
+### 3. Install and run
+
+```bash
 uv sync
-uv run python -c "from pixel_mcp.auth import TokenManager; TokenManager().ensure_authorized()"
+uv run python -m pixel_mcp.server
+
+# First run opens your browser for Google OAuth authorization
 ```
 
-Le navigateur s'ouvre, tu cliques **Autoriser**. Tokens dans `~/.config/pixel-mcp/tokens.json` (chmod 600).
+### 4. Add to Claude Desktop
 
-### 4. Brancher sur Claude Code
-
-```bash
-claude mcp add pixel -- uv --directory ~/pixel-mcp run python -m pixel_mcp.server
+```json
+{
+  "mcpServers": {
+    "pixel": {
+      "command": "uv",
+      "args": ["--directory", "/path/to/pixel-mcp", "run", "python", "-m", "pixel_mcp.server"]
+    }
+  }
+}
 ```
 
-## Architecture
+## Authentication
 
-L'API Google Health v4 expose une seule resource générique `users/me/dataTypes/{type}/dataPoints`. Le MCP fournit :
+OAuth 2.0 with loopback redirect on `http://127.0.0.1:8733/callback`. Tokens persisted in `~/.config/pixel-mcp/tokens.json`. Auto-refresh with automatic re-auth on `invalid_grant`.
 
-- **`tools/users.py`** — identité, profil, settings, IRN profile (get/update).
-- **`tools/devices.py`** — appareils appairés (Pixel Watch, etc.).
-- **`tools/datapoints.py`** — opérations brutes : list/get/create/patch/batchDelete/rollUp/dailyRollUp/reconcile/exportTcx sur n'importe quel data type.
-- **`tools/convenience.py`** — wrappers haut-niveau par domaine (get_steps, get_heart_rate, get_sleep, get_hrv, get_spo2…) qui construisent les filtres AIP-160 pour toi.
+## Google Health API filter quirks
 
-49 tools au total. Pour des cas non couverts par les wrappers, utilise `list_data_points(data_type, filter=...)` directement.
+This server handles several undocumented filter syntax quirks:
+- Exercise and nutrition use `civil_start_time` (not `start_time`)
+- Sleep is indexed by `end_time` (wake-up time)
+- ECG only supports single `>=` bound (no upper bound)
+- Floors require `dailyRollUp` (list not supported)
+- respiratory-rate-sleep-summary is a sample type, not interval
 
-## Logs (debug)
+## Logging
 
-Toutes les requêtes API et événements OAuth sont loggés en JSON-lines dans `~/.config/pixel-mcp/logs/pixel-mcp.log` (rotation 5×1 Mo). Ni les tokens, ni les Authorization headers, ni les payloads de data points (FC, sommeil, GPS…) ne sont écrits — seulement les métadonnées HTTP.
+JSON-lines logs in `~/.config/pixel-mcp/logs/pixel-mcp.log`. Set `PIXEL_MCP_LOG_LEVEL=DEBUG` in `.env`.
 
-Niveau réglable via env var :
-```bash
-PIXEL_MCP_LOG_LEVEL=DEBUG uv run python -m pixel_mcp.server
-```
+## License
 
-Inspecter rapidement :
-```bash
-tail -f ~/.config/pixel-mcp/logs/pixel-mcp.log | jq .
-# Toutes les erreurs HTTP :
-jq 'select(.event=="http_error")' ~/.config/pixel-mcp/logs/pixel-mcp.log
-```
+MIT
